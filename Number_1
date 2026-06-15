@@ -1,0 +1,306 @@
+import flet as ft
+import json
+import os
+
+class UserData:
+    def __init__(self):
+        self._pol = ""
+        self._rost = 0
+        self._ves = 0
+        self._cel = ""
+    
+    def get_pol(self):
+        return self._pol
+    
+    def set_pol(self, value):
+        self._pol = value
+    
+    def get_rost(self):
+        return self._rost
+    
+    def set_rost(self, value):
+        self._rost = value
+    
+    def get_ves(self):
+        return self._ves
+    
+    def set_ves(self, value):
+        self._ves = value
+    
+    def get_cel(self):
+        return self._cel
+    
+    def set_cel(self, value):
+        self._cel = value
+
+#История
+class HistoryStorage:
+    def __init__(self, filename="history.json"):
+        self._filename = filename
+    
+    def save(self, record):
+        history = self.load()
+        history.append(record)
+        if len(history) > 10:
+            history = history[-10:]
+        with open(self._filename, 'w', encoding='utf-8') as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    
+    def load(self):
+        if not os.path.exists(self._filename):
+            return []
+        with open(self._filename, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    
+    def clear(self):
+        if os.path.exists(self._filename):
+            os.remove(self._filename)
+
+class Calculator:
+    @staticmethod
+    def raschet(user_data):
+        pol = user_data.get_pol()
+        ves = user_data.get_ves()
+        rost = user_data.get_rost()
+        cel = user_data.get_cel()
+        
+        if pol == "m":
+            bmr = 10 * ves + 6.25 * rost - 5 * 20 + 5
+        else:
+            bmr = 10 * ves + 6.25 * rost - 5 * 20 - 161
+        
+        norma = int(bmr * 1.55)
+        
+        if cel == "nabor":
+            result = norma + 300
+            sovet = "Добавьте 300 калорий к норме"
+        else:
+            result = norma - 300
+            sovet = "Уберите 300 калорий от нормы"
+        
+        return norma, result, sovet
+
+# ПРИНЦИП 4: АБСТРАКЦИЯ
+class KaloriiApp:
+    def __init__(self, page: ft.Page):
+        self.page = page
+        self.user = UserData()
+        self.storage = HistoryStorage()
+        
+        self.page.title = "Калькулятор калорий"
+        self.page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+        self.page.vertical_alignment = ft.MainAxisAlignment.START
+        self.page.padding = 20
+        self.page.window_width = 500
+        self.page.window_height = 700
+        
+        self.build_ui()
+    
+    def build_ui(self):
+        # главная колонка с прокруткой
+        self.main_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # экран 1 - выбор пола
+        self.pol_text = ft.Text("Выберите ваш пол:", size=24)
+        self.btn_m = ft.ElevatedButton("Мужской", on_click=lambda e: self.select_pol("m"))
+        self.btn_g = ft.ElevatedButton("Женский", on_click=lambda e: self.select_pol("g"))
+        self.pol_row = ft.Row([self.btn_m, self.btn_g], alignment=ft.MainAxisAlignment.CENTER)
+        
+        # экран 2 - рост и вес
+        self.rost_ves_text = ft.Text("Введите ваш рост (см) и вес (кг):", size=24, visible=False)
+        self.input_rost = ft.TextField(label="Рост", width=200, visible=False)
+        self.input_ves = ft.TextField(label="Вес", width=200, visible=False)
+        self.btn_dalee = ft.ElevatedButton("Далее", on_click=self.save_rost_ves, visible=False)
+        
+        # экран 3 - выбор цели
+        self.cel_text = ft.Text("Выберите вашу цель:", size=24, visible=False)
+        self.btn_nabor = ft.ElevatedButton("Набор массы", on_click=lambda e: self.select_cel("nabor"))
+        self.btn_pohud = ft.ElevatedButton("Похудение", on_click=lambda e: self.select_cel("pohudenie"))
+        self.cel_row = ft.Row([self.btn_nabor, self.btn_pohud], alignment=ft.MainAxisAlignment.CENTER)
+        self.cel_row.visible = False
+        
+        # экран 4 - результат
+        self.result_text = ft.Text("", size=16, visible=False)
+        
+        # кнопки внизу
+        self.btn_restart = ft.ElevatedButton("Новый расчет", on_click=self.restart, visible=False)
+        self.btn_show_history = ft.ElevatedButton("История", on_click=self.show_history, visible=False)
+        
+        # ИСТОРИЯ - добавлена отдельная колонка с прокруткой
+        self.history_column = ft.Column(visible=False)
+        self.history_title = ft.Text("Последние расчеты:", size=20, weight=ft.FontWeight.BOLD)
+        
+        # ЭТО ВАЖНО: список истории с прокруткой
+        self.history_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, height=400)
+        
+        self.btn_clear_history = ft.ElevatedButton("Очистить историю", on_click=self.clear_history, visible=False)
+        self.btn_hide_history = ft.TextButton("Скрыть историю", on_click=self.hide_history)
+        
+        self.history_column.controls = [
+            self.history_title,
+            self.history_list,  # теперь этот список имеет прокрутку
+            ft.Row([self.btn_clear_history, self.btn_hide_history], alignment=ft.MainAxisAlignment.CENTER)
+        ]
+        
+        self.error_text = ft.Text("", color="red", visible=False)
+        
+        self.main_column.controls = [
+            self.pol_text,
+            self.pol_row,
+            self.rost_ves_text,
+            self.input_rost,
+            self.input_ves,
+            self.btn_dalee,
+            self.cel_text,
+            self.cel_row,
+            self.result_text,
+            ft.Row([self.btn_restart, self.btn_show_history], alignment=ft.MainAxisAlignment.CENTER),
+            self.history_column,
+            self.error_text
+        ]
+        
+        self.page.add(self.main_column)
+    
+    def select_pol(self, pol):
+        self.user.set_pol(pol)
+        
+        self.pol_text.visible = False
+        self.pol_row.visible = False
+        self.rost_ves_text.visible = True
+        self.input_rost.visible = True
+        self.input_ves.visible = True
+        self.btn_dalee.visible = True
+        
+        self.page.update()
+    
+    def save_rost_ves(self, e):
+        try:
+            rost = int(self.input_rost.value)
+            ves = int(self.input_ves.value)
+            
+            if rost <= 0 or ves <= 0:
+                self.error_text.value = "Рост и вес должны быть больше 0!"
+                self.error_text.visible = True
+                self.page.update()
+                return
+            
+            self.user.set_rost(rost)
+            self.user.set_ves(ves)
+            
+            self.rost_ves_text.visible = False
+            self.input_rost.visible = False
+            self.input_ves.visible = False
+            self.btn_dalee.visible = False
+            
+            self.cel_text.visible = True
+            self.cel_row.visible = True
+            
+            self.error_text.visible = False
+            self.page.update()
+            
+        except:
+            self.error_text.value = "Введите числа!"
+            self.error_text.visible = True
+            self.page.update()
+    
+    def select_cel(self, cel):
+        self.user.set_cel(cel)
+        
+        calc = Calculator()
+        norma, result, sovet = calc.raschet(self.user)
+        
+        pol_str = "Мужчина" if self.user.get_pol() == "m" else "Женщина"
+        cel_str = "Набор массы" if cel == "nabor" else "Похудение"
+        
+        result_text_value = f"""
+{pol_str}
+Рост: {self.user.get_rost()} см
+Вес: {self.user.get_ves()} кг
+
+Ваша норма: {norma} калорий в день
+Цель: {cel_str}
+
+👉 НУЖНО ПОТРЕБЛЯТЬ: {result} КАЛОРИЙ В ДЕНЬ
+
+{sovet}
+        """
+        
+        self.result_text.value = result_text_value
+        
+        history_record = {
+            "pol": pol_str,
+            "rost": self.user.get_rost(),
+            "ves": self.user.get_ves(),
+            "cel": cel_str,
+            "norma": norma,
+            "result": result,
+            "sovet": sovet
+        }
+        self.storage.save(history_record)
+        
+        self.cel_text.visible = False
+        self.cel_row.visible = False
+        
+        self.result_text.visible = True
+        self.btn_restart.visible = True
+        self.btn_show_history.visible = True
+        
+        self.page.update()
+    
+    def restart(self, e):
+        self.user = UserData()
+        
+        self.result_text.visible = False
+        self.btn_restart.visible = False
+        self.btn_show_history.visible = False
+        self.history_column.visible = False
+        
+        self.pol_text.visible = True
+        self.pol_row.visible = True
+        
+        self.input_rost.value = ""
+        self.input_ves.value = ""
+        self.error_text.visible = False
+        
+        self.page.update()
+    
+    def show_history(self, e):
+        history = self.storage.load()
+        
+        self.history_list.controls.clear()
+        
+        if not history:
+            self.history_list.controls.append(ft.Text("История пуста", italic=True))
+        else:
+            for i, record in enumerate(reversed(history), 1):
+                history_item = ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"#{i} - {record['pol']}, {record['cel']}", weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Рост: {record['rost']} см, Вес: {record['ves']} кг"),
+                        ft.Text(f"Норма: {record['norma']} ккал, Нужно: {record['result']} ккал", color="blue"),
+                        ft.Divider(height=5, thickness=1)
+                    ]),
+                    padding=10,
+                    border_radius=5,
+                    bgcolor=ft.Colors.GREY_100
+                )
+                self.history_list.controls.append(history_item)
+        
+        self.btn_clear_history.visible = True
+        self.history_column.visible = True
+        self.page.update()
+    
+    def clear_history(self, e):
+        self.storage.clear()
+        self.history_list.controls.clear()
+        self.history_list.controls.append(ft.Text("История очищена", italic=True))
+        self.page.update()
+    
+    def hide_history(self, e):
+        self.history_column.visible = False
+        self.page.update()
+
+def main(page: ft.Page):
+    app = KaloriiApp(page)
+
+ft.app(target=main)
