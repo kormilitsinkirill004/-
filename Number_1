@@ -80,7 +80,7 @@ class Calculator:
         
         return norma, result, sovet
 
-# ПРИНЦИП 4: АБСТРАКЦИЯ
+
 class KaloriiApp:
     def __init__(self, page: ft.Page):
         self.page = page
